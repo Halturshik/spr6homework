@@ -40,7 +40,7 @@ var tasks = map[string]Task{
 	},
 }
 
-func GetAllTasks(w http.ResponseWriter, r *http.Request) {
+func getAllTasks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	response, err := json.Marshal(tasks)
@@ -49,10 +49,11 @@ func GetAllTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.WriteHeader(http.StatusOK)
 	w.Write(response)
 }
 
-func AddNewTask(w http.ResponseWriter, r *http.Request) {
+func addNewTask(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Ошибка при обработке данных", http.StatusInternalServerError)
@@ -65,22 +66,26 @@ func AddNewTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if newTask.ID == "" {
+		http.Error(w, "Не заполнено ID задачи", http.StatusBadRequest)
+		return
+	}
+	if _, found := tasks[newTask.ID]; found {
+		http.Error(w, "Задача с указанным ID уже существует", http.StatusBadRequest)
+		return
+	}
+
 	if newTask.Description == "" || len(newTask.Applications) == 0 {
 		http.Error(w, "Отсутствуют обязательные поля", http.StatusBadRequest)
 		return
 	}
 
-	newTask.ID = fmt.Sprintf("%d", len(tasks)+1)
-
 	tasks[newTask.ID] = newTask
 
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	response, _ := json.Marshal(newTask)
-	w.Write(response)
 }
 
-func GetTaskByID(w http.ResponseWriter, r *http.Request) {
+func getTaskByID(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	task, found := tasks[id]
@@ -97,10 +102,12 @@ func GetTaskByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Write(response)
+	if _, err := w.Write(response); err != nil {
+		http.Error(w, "Ошибка при отправке ответа", http.StatusInternalServerError)
+	}
 }
 
-func DeleteTaskByID(w http.ResponseWriter, r *http.Request) {
+func deleteTaskByID(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if _, found := tasks[id]; !found {
@@ -110,19 +117,16 @@ func DeleteTaskByID(w http.ResponseWriter, r *http.Request) {
 
 	delete(tasks, id)
 
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	response := []byte(`"Задача успешно удалена"`)
-	w.Write(response)
 }
 
 func main() {
 	r := chi.NewRouter()
 
-	r.Get("/tasks", GetAllTasks)
-	r.Post("/tasks", AddNewTask)
-	r.Get("/tasks/{id}", GetTaskByID)
-	r.Delete("/tasks/{id}", DeleteTaskByID)
+	r.Get("/tasks", getAllTasks)
+	r.Post("/tasks", addNewTask)
+	r.Get("/tasks/{id}", getTaskByID)
+	r.Delete("/tasks/{id}", deleteTaskByID)
 
 	if err := http.ListenAndServe(":8080", r); err != nil {
 		fmt.Printf("Ошибка при запуске сервера: %s", err.Error())
